@@ -6,7 +6,10 @@ pipeline {
         IMAGE_NAME = "photo-app"
         APP_CONTAINER = "photo-app"
         NETWORK_NAME = "app-network"
+        // Flask listens on this port inside the container (ZAP uses http://photo-app:${APP_PORT})
         APP_PORT = "5000"
+        // Host port published to the Jenkins machine — avoid 5000 if another service uses it (e.g. AirPlay)
+        HOST_APP_PORT = "5050"
         // MySQL on the Jenkins Docker network (matches config.py default DB name)
         MYSQL_CONTAINER = "mysql-db-dast"
         SQLALCHEMY_DATABASE_URI_DOCKER = "mysql+pymysql://root:root@mysql-db-dast:3306/photo_app"
@@ -118,10 +121,14 @@ pipeline {
                     fi
                 done
 
+                # Cache DB between runs; long timeout for slow ghcr.io downloads
                 docker run --rm \
                     -v /var/run/docker.sock:/var/run/docker.sock \
+                    -v trivy-cache:/root/.cache/trivy \
+                    -e TRIVY_TIMEOUT=60m \
                     aquasec/trivy:0.56.0 \
                     image \
+                    --timeout 60m \
                     --format table \
                     --severity CRITICAL,HIGH \
                     --no-progress \
@@ -138,8 +145,8 @@ pipeline {
                 docker stop ${APP_CONTAINER} || true
                 docker rm ${APP_CONTAINER} || true
 
-                # Use flask run so the server binds 0.0.0.0 (required for ZAP on the Docker network)
-                docker run -d --name ${APP_CONTAINER} --network ${NETWORK_NAME} -p ${APP_PORT}:${APP_PORT} \
+                # Host maps HOST_APP_PORT -> container APP_PORT (ZAP still uses photo-app:APP_PORT on Docker network)
+                docker run -d --name ${APP_CONTAINER} --network ${NETWORK_NAME} -p ${HOST_APP_PORT}:${APP_PORT} \
                     -e FLASK_APP=app \
                     -e SQLALCHEMY_DATABASE_URI="${SQLALCHEMY_DATABASE_URI_DOCKER}" \
                     $FULL_IMAGE_TAG \
