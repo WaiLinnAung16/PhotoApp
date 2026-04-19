@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Photo Explorer</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+  </head>
+  <body>
+    <!-- HERO SECTION -->
+    <section class="hero">
+      <div class="overlay">
+        <h1>Photo Explorer</h1>
+
+        <form method="POST" class="search-container" autocomplete="off">
+          <div class="search-box">
+            <input
+              type="text"
+              id="keywordInput"
+              name="keyword"
+              placeholder="Search high-quality photos..."
+              value="{{ keyword_input }}"
+              oninput="fetchSuggestions(this.value)"
+            />
+            <button type="submit">Search</button>
+          </div>
+          <div id="suggestions" class="suggestions"></div>
+        </form>
+      </div>
+    </section>
+
+    <!-- GALLERY -->
+    <section class="gallery">
+      {% for photo in photos %}
+      <div
+        class="photo-card"
+        data-url="{{ photo.image_url }}"
+        data-description="{{ photo.description }}"
+        onclick="openFromData(this)"
+      >
+        <img src="{{ photo.image_url }}" alt="photo" />
+        <div class="overlay-text">{{ photo.description }}</div>
+      </div>
+      {% endfor %}
+    </section>
+
+    <!-- MODAL -->
+    <div id="photoModal" class="modal">
+      <span class="close" onclick="closeModal()">&times;</span>
+      <img class="modal-content" id="modalImage" />
+      <p id="modalDesc"></p>
+    </div>
+  </body>
+
+  <script>
+    let debounceTimer;
+    function fetchSuggestions(query) {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        _fetchSuggestions(query);
+      }, 300);
+    }
+
+    async function _fetchSuggestions(query) {
+      const suggestionsBox = document.getElementById("suggestions");
+      suggestionsBox.innerHTML = "";
+
+      if (!query) return;
+
+      try {
+        const res = await fetch(`/suggest_keywords?q=${query}`);
+        const keywords = await res.json();
+
+        keywords.forEach((k) => {
+          const badge = document.createElement("span");
+          badge.classList.add("keyword-badge");
+          badge.innerText = k;
+
+          // When clicked, fill input and submit form
+          badge.onclick = () => {
+            document.getElementById("keywordInput").value = k;
+            document.querySelector(".search-box").submit();
+          };
+
+          suggestionsBox.appendChild(badge);
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function openFromData(element) {
+      // Pull the data out of the "data-" attributes we just set
+      const imageUrl = element.getAttribute("data-url");
+      const description = element.getAttribute("data-description");
+
+      // Call your existing logic
+      document.getElementById("photoModal").style.display = "block";
+      document.getElementById("modalImage").src = imageUrl;
+      document.getElementById("modalDesc").innerText = description;
+    }
+
+    function closeModal() {
+      document.getElementById("photoModal").style.display = "none";
+    }
+
+    // Optional: close when clicking outside image
+    window.onclick = function (event) {
+      const modal = document.getElementById("photoModal");
+      if (event.target === modal) {
+        modal.style.display = "none";
+      }
+    };
+  </script>
+</html>
