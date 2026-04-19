@@ -121,18 +121,30 @@ pipeline {
                     fi
                 done
 
-                # Cache DB between runs; long timeout for slow ghcr.io downloads
-                docker run --rm \
-                    -v /var/run/docker.sock:/var/run/docker.sock \
-                    -v trivy-cache:/root/.cache/trivy \
-                    -e TRIVY_TIMEOUT=60m \
-                    aquasec/trivy:0.56.0 \
-                    image \
-                    --timeout 60m \
-                    --format table \
-                    --severity CRITICAL,HIGH \
-                    --no-progress \
-                    $FULL_IMAGE_TAG || true
+                # Cache DB between runs; long timeout; retry on flaky ghcr.io / network EOF
+                attempt=1
+                while [ "$attempt" -le 3 ]; do
+                    if docker run --rm \
+                        -v /var/run/docker.sock:/var/run/docker.sock \
+                        -v trivy-cache:/root/.cache/trivy \
+                        -e TRIVY_TIMEOUT=60m \
+                        aquasec/trivy:0.56.0 \
+                        image \
+                        --timeout 60m \
+                        --format table \
+                        --severity CRITICAL,HIGH \
+                        --no-progress \
+                        $FULL_IMAGE_TAG; then
+                        break
+                    fi
+                    if [ "$attempt" -eq 3 ]; then
+                        echo "Trivy scan failed after 3 attempts, continuing pipeline"
+                        break
+                    fi
+                    echo "Trivy failed (attempt $attempt), retrying in 45s..."
+                    attempt=$((attempt + 1))
+                    sleep 45
+                done
                 '''
             }
         }
@@ -155,10 +167,12 @@ pipeline {
                 echo "Waiting for app to initialize..."
                 sleep 15
 
-                chmod 777 $(pwd)
+                # Quote paths: Jenkins workspace can contain spaces (e.g. "Photo App")
+                WS="${WORKSPACE:-$(pwd)}"
+                chmod 777 "$WS"
 
                 docker run --user root --network ${NETWORK_NAME} \
-                    -v $(pwd):/zap/wrk:rw \
+                    -v "$WS:/zap/wrk:rw" \
                     ghcr.io/zaproxy/zaproxy:stable \
                     zap-baseline.py -t http://${APP_CONTAINER}:${APP_PORT} -r zap-report.html -I
                 '''
