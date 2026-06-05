@@ -6,7 +6,7 @@ os.environ["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
 import pytest
 
 from models import Keyword, Photo, db
-from services import PhotoService
+from services import KeywordService, PhotoService
 
 
 @pytest.fixture
@@ -83,3 +83,13 @@ def test_search_by_keyword_finds_matching_photo(app, sample_photo_with_keyword):
 def test_search_by_keyword_no_match(app, sample_photo_with_keyword):
     with app.app_context():
         assert PhotoService.search_by_keyword("nonexistent-term-xyz") == []
+
+
+def test_keyword_suggest_empty_prefix(app):
+    with app.app_context():
+        assert KeywordService.suggest("") == []
+
+
+def test_keyword_suggest_returns_matches(app, sample_photo_with_keyword):
+    with app.app_context():
+        assert "nature" in KeywordService.suggest("nat")

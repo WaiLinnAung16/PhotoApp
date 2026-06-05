@@ -1,14 +1,15 @@
 from flask import Flask, render_template, request, jsonify
-from models import db, Keyword, Photo
-from services import PhotoService
+from models import db
+from services import KeywordService, PhotoService
 
 app = Flask(__name__)
 app.config.from_object("config")
 db.init_app(app)
 
-# Home route
+
 @app.route("/", methods=["GET", "POST"])
 def home():
+    """Render the gallery. POST searches by keyword; GET shows the latest photos."""
     photos = []
     keyword_input = ""
     if request.method == "POST":
@@ -18,17 +19,12 @@ def home():
         photos = PhotoService.get_all_photos()
     return render_template("index.html", photos=photos, keyword_input=keyword_input)
 
-# New route for AJAX suggestions
+
 @app.route("/suggest_keywords")
 def suggest_keywords():
+    """Return keyword suggestions as JSON for the debounced autocomplete UI."""
     q = request.args.get("q", "")
-    if not q:
-        return jsonify([])
-
-    # Search keywords containing the input
-    matches = Keyword.query.filter(Keyword.keyword.ilike(f"%{q}%")).limit(10).all()
-    result = [k.keyword for k in matches]
-    return jsonify(result)
+    return jsonify(KeywordService.suggest(q))
 
 
 if __name__ == "__main__":

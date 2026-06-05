@@ -1,6 +1,5 @@
 pipeline {
     agent any
-
     environment {
         // Docker image name (published as ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest)
         IMAGE_NAME = "photo-app"
@@ -15,28 +14,23 @@ pipeline {
         SQLALCHEMY_DATABASE_URI_DOCKER = "mysql+pymysql://root:root@mysql-db-dast:3306/photo_app"
         DOCKERHUB_CREDENTIALS = credentials('docker-hub-credentials')
     }
-
     stages {
         stage('Checkout') {
             steps {
-                // Replace URL and credentialsId with your Git hosting and Jenkins credential
                 git branch: 'main',
                     url: 'https://github.com/WaiLinnAung16/PhotoApp.git',
                     credentialsId: '4fb414c0-45f5-419f-98cc-e4c94b3e322a'
             }
         }
-
         stage('Setup Docker Network') {
             steps {
                 sh 'docker network create ${NETWORK_NAME} || true'
             }
         }
-
         stage('Launch MySQL') {
             steps {
                 sh '''
                 docker rm -f ${MYSQL_CONTAINER} || true
-
                 docker run -d --name ${MYSQL_CONTAINER} \
                     -e MYSQL_ROOT_PASSWORD=root \
                     -e MYSQL_DATABASE=photo_app \
@@ -49,7 +43,6 @@ pipeline {
                 '''
             }
         }
-
         stage('Setup Python & Lint') {
             steps {
                 sh '''
@@ -60,8 +53,7 @@ pipeline {
                 '''
             }
         }
-
-        stage('SCA - Security Scans') {
+        stage('SCA - Security Scans & SAST') {
             steps {
                 sh '''
                 . venv/bin/activate
@@ -71,7 +63,6 @@ pipeline {
                 '''
             }
         }
-
         stage('Build & Push') {
             steps {
                 sh '''
@@ -83,8 +74,7 @@ pipeline {
                 '''
             }
         }
-
-        stage('Unit Tests with Test Database') {
+        stage('Unit Tests') {
             steps {
                 script {
                     sh """
@@ -96,12 +86,10 @@ pipeline {
                 }
             }
         }
-
         stage('Trivy Scan') {
             steps {
                 sh '''
                 . ./image_tag.env
-
                 echo "Pulling Trivy scanner..."
                 max_retries=3
                 retry_count=0
@@ -120,7 +108,6 @@ pipeline {
                         fi
                     fi
                 done
-
                 # Cache DB between runs; long timeout; retry on flaky ghcr.io / network EOF
                 attempt=1
                 while [ "$attempt" -le 3 ]; do
@@ -148,15 +135,12 @@ pipeline {
                 '''
             }
         }
-
         stage('Run App & DAST') {
             steps {
                 sh '''
                 . ./image_tag.env
-
                 docker stop ${APP_CONTAINER} || true
                 docker rm ${APP_CONTAINER} || true
-
                 # Host maps HOST_APP_PORT -> container APP_PORT (ZAP still uses photo-app:APP_PORT on Docker network)
                 docker run -d --name ${APP_CONTAINER} --network ${NETWORK_NAME} -p ${HOST_APP_PORT}:${APP_PORT} \
                     -e FLASK_APP=app \
@@ -166,11 +150,9 @@ pipeline {
 
                 echo "Waiting for app to initialize..."
                 sleep 15
-
                 # Quote paths: Jenkins workspace can contain spaces (e.g. "Photo App")
                 WS="${WORKSPACE:-$(pwd)}"
                 chmod 777 "$WS"
-
                 docker run --user root --network ${NETWORK_NAME} \
                     -v "$WS:/zap/wrk:rw" \
                     ghcr.io/zaproxy/zaproxy:stable \
@@ -179,7 +161,6 @@ pipeline {
             }
         }
     }
-
     post {
         always {
             archiveArtifacts artifacts: 'zap-report.html, bandit-report.json, safety-report.txt', allowEmptyArchive: true
